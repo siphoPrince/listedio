@@ -6,7 +6,8 @@ import {
   onAuthStateChanged,
   User,
 } from 'firebase/auth'
-import { auth } from '@/firebase'
+import { auth, db } from '@/firebase'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 
 interface AuthContextValue {
   user: User | null
@@ -32,8 +33,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (email: string, password: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password)
-    setUser(cred.user)
-    return cred.user
+    const u = cred.user
+    // create a user profile document in Firestore
+    try {
+      await setDoc(doc(db, 'users', u.uid), {
+        uid: u.uid,
+        email: u.email,
+        createdAt: serverTimestamp(),
+      })
+    } catch (err) {
+      // non-fatal: log and continue
+      // eslint-disable-next-line no-console
+      console.error('Failed to create user profile in Firestore', err)
+    }
+    setUser(u)
+    return u
   }
 
   const login = async (email: string, password: string) => {
