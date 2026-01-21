@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { storage } from '@/firebase'
+import { useAuth } from '@/app/hooks/useAuth'
+import { createListing } from '@/app/api/listings'
 import { Upload, Image as ImageIcon, Video, Tag, DollarSign, FileText } from 'lucide-react';
 import { Card } from '@/app/components/ui/card';
 import { Button } from '@/app/components/ui/button';
@@ -12,6 +16,7 @@ interface ItemUploadProps {
 }
 
 export function ItemUpload({ onSuccess }: ItemUploadProps) {
+  const { user } = useAuth()
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -20,6 +25,9 @@ export function ItemUpload({ onSuccess }: ItemUploadProps) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<number | null>(null)
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -53,18 +61,80 @@ export function ItemUpload({ onSuccess }: ItemUploadProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, this would upload the data to the server
-    console.log({
-      title,
-      description,
-      price,
-      tags,
-      imageFile,
-      videoFile,
-    });
-    // Show success message and redirect
-    alert('Item uploaded successfully!');
-    onSuccess();
+    setError(null)
+    if (!user) {
+      setError('You must be signed in to upload an item.')
+      return
+    }
+    if (!imageFile) {
+      setError('Please select an image for the item.')
+      return
+    }
+
+    const upload = async () => {
+      try {
+        setLoading(true)
+
+        // upload image
+        const imagePath = `images/${user.uid}/${Date.now()}_${imageFile.name}`
+        const imgRef = storageRef(storage, imagePath)
+        const imgSnap = await new Promise<any>((res, rej) => {
+          const task = uploadBytesResumable(imgRef, imageFile)
+          task.on(
+            'state_changed',
+            (snap) => {
+              const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100)
+              setProgress(pct)
+            },
+            (err) => rej(err),
+            () => res(task.snapshot)
+          )
+        })
+        const imageUrl = await getDownloadURL(imgSnap.ref)
+
+        // upload video if present
+        let videoUrl: string | undefined = undefined
+        if (videoFile) {
+          const videoPath = `videos/${user.uid}/${Date.now()}_${videoFile.name}`
+          const vidRef = storageRef(storage, videoPath)
+          const vidSnap = await new Promise<any>((res, rej) => {
+            const task = uploadBytesResumable(vidRef, videoFile)
+            task.on(
+              'state_changed',
+              (snap) => {
+                const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100)
+                setProgress(pct)
+              },
+              (err) => rej(err),
+              () => res(task.snapshot)
+            )
+          })
+          videoUrl = await getDownloadURL(vidSnap.ref)
+        }
+
+        // create listing in Firestore
+        await createListing({
+          ownerUid: user.uid,
+          title,
+          description,
+          price: price ? Number(price) : undefined,
+          imageUrl,
+          status: 'active',
+          tags,
+        })
+
+        alert('Item uploaded successfully!')
+        onSuccess()
+      } catch (err: any) {
+        console.error(err)
+        setError(err?.message || 'Upload failed')
+      } finally {
+        setLoading(false)
+        setProgress(null)
+      }
+    }
+
+    void upload()
   };
 
   return (
@@ -251,10 +321,16 @@ export function ItemUpload({ onSuccess }: ItemUploadProps) {
 
             {/* Submit Button */}
             <div className="pt-4">
-              <Button type="submit" className="w-full rounded-full" size="lg">
-                <Upload className="w-5 h-5 mr-2" />
-                Upload Item
-              </Button>
+              <div>
+                {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
+                {progress !== null && (
+                  <div className="text-sm mb-2">Uploading: {progress}%</div>
+                )}
+                <Button type="submit" className="w-full rounded-full" size="lg" disabled={loading}>
+                  <Upload className="w-5 h-5 mr-2" />
+                  {loading ? 'Uploading…' : 'Upload Item'}
+                </Button>
+              </div>
             </div>
           </Card>
         </form>

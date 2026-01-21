@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   User,
   Star,
@@ -15,7 +15,9 @@ import { Button } from '@/app/components/ui/button';
 import { Badge } from '@/app/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { Separator } from '@/app/components/ui/separator';
-import { currentUser, mockItems, mockTransactions, type Item } from '@/app/data/mockData';
+import { currentUser, mockTransactions, type Item } from '@/app/data/mockData';
+import { useAuth } from '@/app/hooks/useAuth';
+import { listenUserListings, type Listing } from '@/app/api/listings';
 
 interface UserDashboardProps {
   onItemClick: (item: Item) => void;
@@ -23,16 +25,21 @@ interface UserDashboardProps {
 
 export function UserDashboard({ onItemClick }: UserDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview');
+  const { user } = useAuth()
+  const [userListings, setUserListings] = useState<Listing[]>([])
 
-  // Mock user's listings (items they've uploaded)
-  const userListings = mockItems.slice(0, 3);
+  useEffect(() => {
+    if (!user) return
+    const unsub = listenUserListings(user.uid, (items) => setUserListings(items))
+    return () => unsub()
+  }, [user])
   
-  // Mock user's bids
-  const userBids = [
-    { item: mockItems[0], bidAmount: 380, status: 'leading' },
-    { item: mockItems[1], bidAmount: 850, status: 'leading' },
-    { item: mockItems[4], bidAmount: 600, status: 'outbid' },
-  ];
+  // Mock user's bids derived from user's listings (placeholder data)
+  const userBids = userListings.slice(0, 3).map((it, idx) => ({
+    item: it as unknown as Item,
+    bidAmount: 100 * (idx + 3),
+    status: idx === 2 ? 'outbid' : 'leading',
+  }))
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -217,34 +224,25 @@ export function UserDashboard({ onItemClick }: UserDashboardProps) {
           {/* My Listings Tab */}
           <TabsContent value="listings">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {userListings.map((item) => (
+                {userListings.map((item) => (
                 <Card
                   key={item.id}
                   className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-                  onClick={() => onItemClick(item)}
+                  onClick={() => onItemClick(item as unknown as Item)}
                 >
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="w-full aspect-[4/3] object-cover"
-                  />
+                  {item.imageUrl && (
+                    <img src={item.imageUrl} alt={item.title} className="w-full aspect-[4/3] object-cover" />
+                  )}
                   <div className="p-4">
                     <h3 className="font-semibold mb-2">{item.title}</h3>
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-xl font-bold text-primary">
-                        ${item.currentBid || item.price}
+                        ${item.price ?? '—'}
                       </p>
-                      <Badge
-                        variant={item.status === 'active' ? 'default' : 'secondary'}
-                      >
-                        {item.status}
+                      <Badge variant={item.status === 'active' ? 'default' : 'secondary'}>
+                        {item.status ?? 'active'}
                       </Badge>
                     </div>
-                    {item.bids.length > 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        {item.bids.length} bid{item.bids.length !== 1 ? 's' : ''} received
-                      </p>
-                    )}
                     <div className="flex space-x-2 mt-4">
                       <Button variant="outline" size="sm" className="flex-1 rounded-full">
                         Edit
