@@ -1,6 +1,7 @@
 import { Search, ShoppingCart, User, Upload, MapPin, Menu } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
+import { useAuth } from '@/app/hooks/useAuth';
 
 interface HeaderProps {
   currentView: string;
@@ -10,6 +11,7 @@ interface HeaderProps {
 }
 
 export function Header({ currentView, setCurrentView, searchQuery, setSearchQuery }: HeaderProps) {
+  const { user } = useAuth()
   return (
     <header className="sticky top-0 z-50 bg-white border-b shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -60,7 +62,7 @@ export function Header({ currentView, setCurrentView, searchQuery, setSearchQuer
             <Button
               variant={currentView === 'dashboard' ? 'default' : 'ghost'}
               size="icon"
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => setCurrentView(user ? 'dashboard' : 'auth')}
               className="rounded-full"
             >
               <User className="w-5 h-5" />
